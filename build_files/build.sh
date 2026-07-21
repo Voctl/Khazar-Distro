@@ -15,6 +15,7 @@ dnf5 install -y gcc make git socat
 # ---------- faz 3: Khazar platform build (mənbədən) ----------
 git clone --depth 1 https://github.com/Khazar-System-Distribution/khazar-distro /tmp/khazar-src
 make -C /tmp/khazar-src all
+rm -f /usr/local
 mkdir -p /usr/local/bin /usr/local/lib /usr/local/include
 make -C /tmp/khazar-src install DESTDIR=/
 
