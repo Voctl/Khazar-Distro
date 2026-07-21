@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     permissions:
-      contents: read
+      contents: write
       packages: write
       id-token: write
 
@@ -40,12 +40,11 @@ jobs:
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
 
       - name: Install just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3
 
       - name: Check Just Syntax
         shell: bash
-        run: |
-          just check
+        run: just check
 
       - name: Image Name
         id: image-name
@@ -67,24 +66,17 @@ jobs:
       - name: Build Image
         id: build-image
         run: |
-          sudo -E $(command -v just) build \
-            ${IMAGE_NAME} \
-            ${DEFAULT_TAG}
+          sudo -E $(command -v just) build ${IMAGE_NAME} ${DEFAULT_TAG}
 
       - name: Rechunk with rpm-ostree
         id: rechunk
         run: |
-          sudo -E $(command -v just) ostree-rechunk \
-            ${IMAGE_NAME} \
-            ${DEFAULT_TAG}
+          sudo -E $(command -v just) ostree-rechunk ${IMAGE_NAME} ${DEFAULT_TAG}
 
       - name: Generate Build Tags
         id: gen-build-tags
         run: |
-          alias_tags="$(just generate-build-tags \
-                        ${IMAGE_NAME} \
-                        ${DEFAULT_TAG})"
-          echo "Tags for this Action..."
+          alias_tags="$(just generate-build-tags ${IMAGE_NAME} ${DEFAULT_TAG})"
           echo "${alias_tags}"
           echo "alias_tags=${alias_tags}" >> $GITHUB_OUTPUT
 
@@ -93,21 +85,14 @@ jobs:
         env:
           ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
         run: |
-          sudo -E $(command -v just) tag-images \
-            "${IMAGE_NAME}" \
-            "${DEFAULT_TAG}" \
-            "${ALIAS_TAGS}"
+          sudo -E $(command -v just) tag-images "${IMAGE_NAME}" "${DEFAULT_TAG}" "${ALIAS_TAGS}"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0
+        if: github.event_name != 'pull_request'
 
       - name: Push To GHCR
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: github.event_name != 'pull_request'
         id: push-image
         env:
           ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
@@ -120,14 +105,12 @@ jobs:
           echo "digest=${digest}" >> $GITHUB_OUTPUT
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        with:
-          cosign-release: 'v2.6.3'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        if: github.event_name != 'pull_request'
 
       - name: Sign container image
         id: sign-image
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: github.event_name != 'pull_request'
         env:
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
@@ -135,41 +118,13 @@ jobs:
         run: |
           cosign sign -y --key env://COSIGN_PRIVATE_KEY ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}
 
-  # ── ISO Build (only on v* tag push) ──
-  build-iso:
-    name: Build ISO image
-    runs-on: ubuntu-24.04
-    needs: build_push
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-      packages: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install just
-        uses: extractions/setup-just@v2
-
-      - name: Prepare environment
-        run: |
-          IMAGE_NAME=$(just image_name)
-          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> $GITHUB_ENV
-          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> $GITHUB_ENV
-
-      - name: Pull image from GHCR
-        run: |
-          sudo podman pull ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest
-          sudo podman tag ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest ${IMAGE_NAME}:latest
-
-      - name: Build ISO with bootc-image-builder
+      - name: Build ISO
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           mkdir -p output
           sudo podman run \
             --rm \
             --privileged \
-            --pull=newer \
             --security-opt label=type:unconfined_t \
             -v $(pwd)/output:/output \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
@@ -177,11 +132,11 @@ jobs:
             --type iso \
             --rootfs btrfs \
             --use-librepo=True \
-            ${IMAGE_NAME}:latest
-
+            ${IMAGE_NAME}:${DEFAULT_TAG}
           sudo chown -R $USER:$USER output/
 
       - name: Create ISO Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: KhazarOS ${{ github.ref_name }}
@@ -192,10 +147,10 @@ jobs:
 
             ### Quick Install
             ```bash
-            # From existing bootc system:
             sudo bootc switch ghcr.io/${{ github.repository_owner }}/khazar-distro:latest
             sudo reboot
             ```
+
             ### ISO Install
             ```bash
             sudo dd if=khazaros-*.iso of=/dev/sdX bs=4M status=progress
