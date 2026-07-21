@@ -40,6 +40,7 @@ jobs:
 
       - name: Build ISO
         run: |
+          mkdir -p output
           sudo podman run \
             --rm \
             --privileged \

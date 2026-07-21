@@ -165,6 +165,7 @@ jobs:
 
       - name: Build ISO with bootc-image-builder
         run: |
+          mkdir -p output
           sudo podman run \
             --rm \
             --privileged \
