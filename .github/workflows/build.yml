@@ -149,15 +149,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Image Name
-        id: image-name
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Prepare environment
         run: |
           IMAGE_NAME=$(just image_name)
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> $GITHUB_ENV
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> $GITHUB_ENV
 
       - name: Pull image from GHCR
         run: |
-          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> $GITHUB_ENV
           sudo podman pull ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest
           sudo podman tag ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest ${IMAGE_NAME}:latest
 
